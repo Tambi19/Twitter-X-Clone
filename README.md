@@ -1,11 +1,3 @@
-# MERN Stack Project: Build and Deploy a Twitter Clone From Scratch | JWT, Socket.io
-
-![Demo App](https://i.ibb.co/f8y9vGS/Group-82.png)
-
-[Video Tutorial on Youtube](https://youtu.be/4GUVz2psWUg)
-
-Some Features:
-
 -   ⚛️ Tech Stack: React.js, MongoDB, Node.js, Express, Tailwind
 -   🔐 Authentication with JSONWEBTOKENS (JWT)
 -   🔥 React Query for Data Fetching, Caching etc.
@@ -45,3 +37,6 @@ npm run build
 ```shell
 npm start
 ```
+## Contributer
+. Tambi Rao
+
