@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { toast } from "react-hot-toast";
 
 import XSvg from "../../../components/svgs/X";
 
@@ -23,6 +24,8 @@ const LoginPage = () => {
 	} = useMutation({
 		mutationFn: async ({ username, password }) => {
 			try {
+				console.log("Attempting login for:", username);
+				
 				const res = await fetch("/api/auth/login", {
 					method: "POST",
 					headers: {
@@ -31,19 +34,38 @@ const LoginPage = () => {
 					body: JSON.stringify({ username, password }),
 				});
 
-				const data = await res.json();
-
+				// Check if response is ok before trying to parse JSON
 				if (!res.ok) {
-					throw new Error(data.error || "Something went wrong");
+					const contentType = res.headers.get("content-type");
+					if (contentType && contentType.includes("application/json")) {
+						const data = await res.json();
+						throw new Error(data.error || "Server error: " + res.status);
+					} else {
+						// Handle non-JSON response (like HTML)
+						const text = await res.text();
+						console.error("Server returned non-JSON response:", text);
+						throw new Error("Server returned invalid response. Check if backend server is running properly.");
+					}
 				}
+				
+				// Parse JSON response
+				const data = await res.json();
+				return data;
 			} catch (error) {
-				throw new Error(error);
+				console.error("Login error:", error);
+				if (error.message.includes("Unexpected token")) {
+					throw new Error("Server error: The API is not responding correctly. Make sure the backend server is running.");
+				}
+				throw new Error(error.message || "Failed to login. Please try again.");
 			}
 		},
 		onSuccess: () => {
 			// refetch the authUser
 			queryClient.invalidateQueries({ queryKey: ["authUser"] });
 		},
+		onError: (error) => {
+			toast.error(error.message || "Login failed. Please try again.");
+		}
 	});
 
 	const handleSubmit = (e) => {

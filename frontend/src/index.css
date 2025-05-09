@@ -1,3 +1,47 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Force the theme colors to apply */
+:root {
+  --primary: rgb(29, 155, 240);
+  --secondary: rgb(24, 24, 24);
+  --background: #000;
+  --text-color: #fff;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text-color);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.btn-primary {
+  background-color: var(--primary) !important;
+  color: #fff !important;
+}
+
+.input {
+  background-color: #16181c !important;
+  color: #fff !important;
+  border: 1px solid #333 !important;
+}
+
+.textarea {
+  background-color: transparent !important;
+  color: #fff !important;
+  border: 1px solid #333 !important;
+}
+
+/* Add specific DaisyUI theme helper */
+[data-theme="black"] {
+  --p: 29 155 240;
+  --s: 24 24 24;
+  --n: 25 29 36;
+  --b1: 42 48 60;
+  --bc: 255 255 255;
+  --in: 56 189 248;
+  --su: 54 211 153;
+  --wa: 251 189 35;
+  --er: 248 114 114;
+}

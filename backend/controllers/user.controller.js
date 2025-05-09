@@ -113,23 +113,86 @@ export const updateUser = async (req, res) => {
 			user.password = await bcrypt.hash(newPassword, salt);
 		}
 
-		if (profileImg) {
-			if (user.profileImg) {
-				// https://res.cloudinary.com/dyfqon1v6/image/upload/v1712997552/zmxorcxexpdbh8r0bkjb.png
-				await cloudinary.uploader.destroy(user.profileImg.split("/").pop().split(".")[0]);
-			}
+		// Detect if Cloudinary is properly configured with valid credentials (not default values)
+		const isCloudinaryConfigured = 
+			process.env.CLOUDINARY_CLOUD_NAME && 
+			process.env.CLOUDINARY_CLOUD_NAME !== 'your-cloud-name' &&
+			process.env.CLOUDINARY_CLOUD_NAME !== 'default-cloud-name' &&
+			process.env.CLOUDINARY_API_KEY && 
+			process.env.CLOUDINARY_API_KEY !== 'your-api-key' &&
+			process.env.CLOUDINARY_API_KEY !== 'default-api-key' &&
+			process.env.CLOUDINARY_API_SECRET && 
+			process.env.CLOUDINARY_API_SECRET !== 'your-api-secret' &&
+			process.env.CLOUDINARY_API_SECRET !== 'default-api-secret';
 
-			const uploadedResponse = await cloudinary.uploader.upload(profileImg);
-			profileImg = uploadedResponse.secure_url;
+		// Upload profile image if provided
+		if (profileImg) {
+			try {
+				if (!isCloudinaryConfigured) {
+					console.log("Cloudinary not configured with valid credentials. Using data URL as fallback.");
+					// Just use the dataURL as is without uploading to Cloudinary
+					// This isn't ideal for production but allows development without Cloudinary
+				} else {
+					// Cloudinary is configured properly, proceed with upload
+					if (user.profileImg && !user.profileImg.startsWith('data:')) {
+						try {
+							const publicId = user.profileImg.split("/").pop().split(".")[0];
+							await cloudinary.uploader.destroy(publicId);
+						} catch (destroyError) {
+							console.log("Error deleting old profile image:", destroyError);
+							// Continue even if old image deletion fails
+						}
+					}
+
+					const uploadedResponse = await cloudinary.uploader.upload(profileImg);
+					profileImg = uploadedResponse.secure_url;
+				}
+			} catch (cloudinaryError) {
+				console.log("Cloudinary upload error for profile image:", cloudinaryError);
+				// In development mode, allow falling back to data URL
+				if (process.env.NODE_ENV === 'development') {
+					console.log("Using data URL as fallback for profile image in development mode");
+				} else {
+					return res.status(400).json({ 
+						error: "Failed to upload profile image. Please check your Cloudinary configuration."
+					});
+				}
+			}
 		}
 
+		// Upload cover image if provided
 		if (coverImg) {
-			if (user.coverImg) {
-				await cloudinary.uploader.destroy(user.coverImg.split("/").pop().split(".")[0]);
-			}
+			try {
+				if (!isCloudinaryConfigured) {
+					console.log("Cloudinary not configured with valid credentials. Using data URL as fallback.");
+					// Just use the dataURL as is without uploading to Cloudinary
+					// This isn't ideal for production but allows development without Cloudinary
+				} else {
+					// Cloudinary is configured properly, proceed with upload
+					if (user.coverImg && !user.coverImg.startsWith('data:')) {
+						try {
+							const publicId = user.coverImg.split("/").pop().split(".")[0];
+							await cloudinary.uploader.destroy(publicId);
+						} catch (destroyError) {
+							console.log("Error deleting old cover image:", destroyError);
+							// Continue even if old image deletion fails
+						}
+					}
 
-			const uploadedResponse = await cloudinary.uploader.upload(coverImg);
-			coverImg = uploadedResponse.secure_url;
+					const uploadedResponse = await cloudinary.uploader.upload(coverImg);
+					coverImg = uploadedResponse.secure_url;
+				}
+			} catch (cloudinaryError) {
+				console.log("Cloudinary upload error for cover image:", cloudinaryError);
+				// In development mode, allow falling back to data URL
+				if (process.env.NODE_ENV === 'development') {
+					console.log("Using data URL as fallback for cover image in development mode");
+				} else {
+					return res.status(400).json({ 
+						error: "Failed to upload cover image. Please check your Cloudinary configuration."
+					});
+				}
+			}
 		}
 
 		user.fullName = fullName || user.fullName;
@@ -145,9 +208,9 @@ export const updateUser = async (req, res) => {
 		// password should be null in response
 		user.password = null;
 
-		return res.status(200).json(user);
+		res.status(200).json(user);
 	} catch (error) {
-		console.log("Error in updateUser: ", error.message);
+		console.log("Error in updateUser controller: ", error.message);
 		res.status(500).json({ error: error.message });
 	}
 };

@@ -3,6 +3,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import { v2 as cloudinary } from "cloudinary";
+import fs from "fs";
 
 import authRoutes from "./routes/auth.route.js";
 import userRoutes from "./routes/user.route.js";
@@ -11,13 +12,32 @@ import notificationRoutes from "./routes/notification.route.js";
 
 import connectMongoDB from "./db/connectMongoDB.js";
 
-dotenv.config();
+// Try to load .env from multiple possible locations
+const rootEnvPath = path.resolve(process.cwd(), '.env');
+const backendEnvPath = path.resolve(process.cwd(), 'backend', '.env');
 
-cloudinary.config({
-	cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-	api_key: process.env.CLOUDINARY_API_KEY,
-	api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+if (fs.existsSync(rootEnvPath)) {
+	console.log('Loading .env from project root:', rootEnvPath);
+	dotenv.config({ path: rootEnvPath });
+} else if (fs.existsSync(backendEnvPath)) {
+	console.log('Loading .env from backend directory:', backendEnvPath);
+	dotenv.config({ path: backendEnvPath });
+} else {
+	console.log('No .env file found. Using default environment variables.');
+	dotenv.config();
+}
+
+// Configure Cloudinary with fallback values
+try {
+	cloudinary.config({
+		cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "default-cloud-name",
+		api_key: process.env.CLOUDINARY_API_KEY || "default-api-key",
+		api_secret: process.env.CLOUDINARY_API_SECRET || "default-api-secret",
+	});
+	console.log("Cloudinary configured");
+} catch (error) {
+	console.log("Error configuring Cloudinary:", error.message);
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -41,6 +61,14 @@ if (process.env.NODE_ENV === "production") {
 		res.sendFile(path.resolve(__dirname, "frontend", "dist", "index.html"));
 	});
 }
+
+// Print the current environment variables for debugging
+console.log("Environment variables:");
+console.log("PORT:", process.env.PORT);
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("JWT_SECRET:", process.env.JWT_SECRET ? "[SET]" : "[NOT SET]");
+console.log("MONGO_URI:", process.env.MONGO_URI ? "[SET]" : "[NOT SET]");
+console.log("CLOUDINARY_CLOUD_NAME:", process.env.CLOUDINARY_CLOUD_NAME ? "[SET]" : "[NOT SET]");
 
 app.listen(PORT, () => {
 	console.log(`Server is running on port ${PORT}`);

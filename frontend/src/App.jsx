@@ -19,16 +19,27 @@ function App() {
 		queryKey: ["authUser"],
 		queryFn: async () => {
 			try {
+				console.log("Checking authentication status...");
 				const res = await fetch("/api/auth/me");
-				const data = await res.json();
-				if (data.error) return null;
-				if (!res.ok) {
-					throw new Error(data.error || "Something went wrong");
+				
+				// Handle different response types
+				const contentType = res.headers.get("content-type");
+				if (contentType && contentType.includes("application/json")) {
+					const data = await res.json();
+					if (data.error || !res.ok) {
+						console.log("Auth check failed:", data.error || res.statusText);
+						return null;
+					}
+					console.log("User is authenticated:", data);
+					return data;
+				} else {
+					// If not JSON, server might be returning HTML or other content
+					console.error("Server returned non-JSON response");
+					return null;
 				}
-				console.log("authUser is here:", data);
-				return data;
 			} catch (error) {
-				throw new Error(error);
+				console.error("Auth check error:", error);
+				return null;
 			}
 		},
 		retry: false,

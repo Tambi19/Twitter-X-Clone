@@ -8,7 +8,10 @@ export const protectRoute = async (req, res, next) => {
 			return res.status(401).json({ error: "Unauthorized: No Token Provided" });
 		}
 
-		const decoded = jwt.verify(token, process.env.JWT_SECRET);
+		// Use a default JWT secret if the environment variable is not set
+		const secret = process.env.JWT_SECRET || "twitter-clone-default-secret-key-for-development";
+		
+		const decoded = jwt.verify(token, secret);
 
 		if (!decoded) {
 			return res.status(401).json({ error: "Unauthorized: Invalid Token" });

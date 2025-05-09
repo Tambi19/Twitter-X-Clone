@@ -1,7 +1,10 @@
 import jwt from "jsonwebtoken";
 
 export const generateTokenAndSetCookie = (userId, res) => {
-	const token = jwt.sign({ userId }, process.env.JWT_SECRET, {
+	// Use a default JWT secret if the environment variable is not set
+	const secret = process.env.JWT_SECRET || "twitter-clone-default-secret-key-for-development";
+	
+	const token = jwt.sign({ userId }, secret, {
 		expiresIn: "15d",
 	});
 

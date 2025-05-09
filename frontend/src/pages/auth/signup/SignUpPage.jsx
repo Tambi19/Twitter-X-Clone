@@ -23,6 +23,8 @@ const SignUpPage = () => {
 	const { mutate, isError, isPending, error } = useMutation({
 		mutationFn: async ({ email, username, fullName, password }) => {
 			try {
+				console.log("Attempting signup for:", username);
+				
 				const res = await fetch("/api/auth/signup", {
 					method: "POST",
 					headers: {
@@ -31,13 +33,30 @@ const SignUpPage = () => {
 					body: JSON.stringify({ email, username, fullName, password }),
 				});
 
+				// Check if response is ok before trying to parse JSON
+				if (!res.ok) {
+					const contentType = res.headers.get("content-type");
+					if (contentType && contentType.includes("application/json")) {
+						const data = await res.json();
+						throw new Error(data.error || "Server error: " + res.status);
+					} else {
+						// Handle non-JSON response (like HTML)
+						const text = await res.text();
+						console.error("Server returned non-JSON response:", text);
+						throw new Error("Server returned invalid response. Check if backend server is running properly.");
+					}
+				}
+				
+				// Parse JSON response
 				const data = await res.json();
-				if (!res.ok) throw new Error(data.error || "Failed to create account");
-				console.log(data);
+				console.log("Signup successful:", data);
 				return data;
 			} catch (error) {
-				console.error(error);
-				throw error;
+				console.error("Signup error:", error);
+				if (error.message.includes("Unexpected token")) {
+					throw new Error("Server error: The API is not responding correctly. Make sure the backend server is running.");
+				}
+				throw new Error(error.message || "Failed to create account. Please try again.");
 			}
 		},
 		onSuccess: () => {
@@ -48,6 +67,9 @@ const SignUpPage = () => {
 			}
 			queryClient.invalidateQueries({ queryKey: ["authUser"] });
 		},
+		onError: (error) => {
+			toast.error(error.message || "Failed to create account. Please try again.");
+		}
 	});
 
 	const handleSubmit = (e) => {

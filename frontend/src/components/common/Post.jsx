@@ -1,9 +1,9 @@
 import { FaRegComment } from "react-icons/fa";
 import { BiRepost } from "react-icons/bi";
-import { FaRegHeart } from "react-icons/fa";
+import { FaRegHeart, FaHeart } from "react-icons/fa";
 import { FaRegBookmark } from "react-icons/fa6";
 import { FaTrash } from "react-icons/fa";
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
@@ -16,7 +16,29 @@ const Post = ({ post }) => {
 	const { data: authUser } = useQuery({ queryKey: ["authUser"] });
 	const queryClient = useQueryClient();
 	const postOwner = post.user;
-	const isLiked = post.likes.includes(authUser._id);
+	
+	// Fix isLiked check to properly handle different data types
+	const isLiked = useMemo(() => {
+		if (!authUser || !post.likes) return false;
+		
+		return post.likes.some(likeId => {
+			// Convert both IDs to string to ensure consistent comparison
+			const likeIdStr = typeof likeId === 'object' ? likeId._id?.toString() : likeId?.toString();
+			const authUserIdStr = authUser._id?.toString();
+			return likeIdStr === authUserIdStr;
+		});
+	}, [post.likes, authUser]);
+
+	// Add debugging log
+	useEffect(() => {
+		console.log(`Post ${post._id} like status:`, {
+			liked: isLiked,
+			likesCount: post.likes?.length || 0,
+			likes: post.likes
+		});
+	}, [post.likes, isLiked, post._id]);
+
+	console.log("Post likes:", post.likes, "Auth user ID:", authUser._id, "Is liked:", isLiked);
 
 	const isMyPost = authUser._id === post.user._id;
 
@@ -25,62 +47,149 @@ const Post = ({ post }) => {
 	const { mutate: deletePost, isPending: isDeleting } = useMutation({
 		mutationFn: async () => {
 			try {
+				console.log("Attempting to delete post:", post._id);
+				
 				const res = await fetch(`/api/posts/${post._id}`, {
 					method: "DELETE",
+					headers: {
+						"Content-Type": "application/json"
+					}
 				});
-				const data = await res.json();
 
+				// Check if response is ok before trying to parse JSON
 				if (!res.ok) {
-					throw new Error(data.error || "Something went wrong");
+					const contentType = res.headers.get("content-type");
+					if (contentType && contentType.includes("application/json")) {
+						const data = await res.json();
+						throw new Error(data.error || `Server error (${res.status}): ${data.message || "Unknown error"}`);
+					} else {
+						// Handle non-JSON response (like HTML)
+						const text = await res.text();
+						console.error("Server returned non-JSON response:", text);
+						throw new Error(`Server error (${res.status}): The API returned an invalid response.`);
+					}
 				}
+				
+				// Parse JSON response
+				const data = await res.json();
+				console.log("Post deleted successfully:", data);
 				return data;
 			} catch (error) {
-				throw new Error(error);
+				console.error("Delete post error:", error);
+				if (error.message.includes("Unexpected token")) {
+					throw new Error("Server error: The API is not responding correctly. Make sure the backend server is running.");
+				}
+				throw new Error(error.message || "Failed to delete post");
 			}
 		},
 		onSuccess: () => {
 			toast.success("Post deleted successfully");
+			
+			// Optimistically remove the post from the cache
+			queryClient.setQueryData(["posts"], (oldData) => {
+				if (!oldData) return oldData;
+				return oldData.filter(p => p._id !== post._id);
+			});
+			
+			// Then invalidate the query to ensure data is consistent
 			queryClient.invalidateQueries({ queryKey: ["posts"] });
 		},
+		onError: (error) => {
+			toast.error(error.message || "Failed to delete post");
+			// On error, refetch posts to ensure UI is in sync with server
+			queryClient.invalidateQueries({ queryKey: ["posts"] });
+		}
 	});
 
 	const { mutate: likePost, isPending: isLiking } = useMutation({
 		mutationFn: async () => {
 			try {
+				console.log("Sending like/unlike request for post:", post._id);
+				
 				const res = await fetch(`/api/posts/like/${post._id}`, {
 					method: "POST",
+					headers: {
+						"Content-Type": "application/json"
+					}
 				});
-				const data = await res.json();
+				
+				// Check if response is ok before trying to parse JSON
 				if (!res.ok) {
-					throw new Error(data.error || "Something went wrong");
+					const contentType = res.headers.get("content-type");
+					if (contentType && contentType.includes("application/json")) {
+						const data = await res.json();
+						throw new Error(data.error || `Server error (${res.status}): ${data.message || "Unknown error"}`);
+					} else {
+						// Handle non-JSON response (like HTML)
+						const text = await res.text();
+						console.error("Server returned non-JSON response:", text);
+						throw new Error(`Server error (${res.status}): The API returned an invalid response.`);
+					}
 				}
+				
+				// Parse JSON response
+				const data = await res.json();
+				console.log("Like action server response:", data);
 				return data;
 			} catch (error) {
-				throw new Error(error);
+				console.error("Like post error:", error);
+				if (error.message.includes("Unexpected token")) {
+					throw new Error("Server error: The API is not responding correctly. Make sure the backend server is running.");
+				}
+				throw new Error(error.message || "Failed to like post");
 			}
 		},
-		onSuccess: (updatedLikes) => {
-			// this is not the best UX, bc it will refetch all posts
-			// queryClient.invalidateQueries({ queryKey: ["posts"] });
-
-			// instead, update the cache directly for that post
+		onSuccess: (updatedPost) => {
+			// Get the current like status before update
+			const wasLiked = isLiked;
+			
+			console.log("Server response for like action:", {
+				postId: updatedPost._id, 
+				wasLiked, 
+				newLikesCount: updatedPost.likes?.length || 0
+			});
+			
+			// Show success message based on previous action
+			if (wasLiked) {
+				toast.success("Post unliked");
+			} else {
+				toast.success("Post liked");
+			}
+			
+			// Ensure all posts in the cache are updated with the correct server response
 			queryClient.setQueryData(["posts"], (oldData) => {
+				if (!oldData) return oldData;
 				return oldData.map((p) => {
-					if (p._id === post._id) {
-						return { ...p, likes: updatedLikes };
+					if (p._id === updatedPost._id) {
+						// Make sure we're using the complete updated post from server
+						return {
+							...updatedPost,
+							likes: updatedPost.likes || [] // Ensure likes is an array even if null/undefined
+						};
 					}
 					return p;
 				});
 			});
+			
+			// Also invalidate the queries to ensure data is consistent
+			queryClient.invalidateQueries({ queryKey: ["posts"] });
 		},
 		onError: (error) => {
-			toast.error(error.message);
+			toast.error(error.message || "Failed to like/unlike post");
+			// On error, refetch posts to ensure UI is in sync with server
+			queryClient.invalidateQueries({ queryKey: ["posts"] });
 		},
 	});
 
 	const { mutate: commentPost, isPending: isCommenting } = useMutation({
 		mutationFn: async () => {
+			if (!comment.trim()) {
+				throw new Error("Comment cannot be empty");
+			}
+			
 			try {
+				console.log("Attempting to comment on post:", post._id);
+				
 				const res = await fetch(`/api/posts/comment/${post._id}`, {
 					method: "POST",
 					headers: {
@@ -88,38 +197,96 @@ const Post = ({ post }) => {
 					},
 					body: JSON.stringify({ text: comment }),
 				});
-				const data = await res.json();
 
+				// Check if response is ok before trying to parse JSON
 				if (!res.ok) {
-					throw new Error(data.error || "Something went wrong");
+					const contentType = res.headers.get("content-type");
+					if (contentType && contentType.includes("application/json")) {
+						const data = await res.json();
+						throw new Error(data.error || `Server error (${res.status}): ${data.message || "Unknown error"}`);
+					} else {
+						// Handle non-JSON response (like HTML)
+						const text = await res.text();
+						console.error("Server returned non-JSON response:", text);
+						throw new Error(`Server error (${res.status}): The API returned an invalid response.`);
+					}
 				}
+				
+				// Parse JSON response
+				const data = await res.json();
+				console.log("Comment added successfully:", data);
 				return data;
 			} catch (error) {
-				throw new Error(error);
+				console.error("Comment post error:", error);
+				if (error.message.includes("Unexpected token")) {
+					throw new Error("Server error: The API is not responding correctly. Make sure the backend server is running.");
+				}
+				throw new Error(error.message || "Failed to post comment");
 			}
 		},
-		onSuccess: () => {
+		onSuccess: (updatedPost) => {
 			toast.success("Comment posted successfully");
 			setComment("");
-			queryClient.invalidateQueries({ queryKey: ["posts"] });
+			
+			// Update the post in the cache to include the new comment
+			queryClient.setQueryData(["posts"], (oldData) => {
+				if (!oldData) return oldData;
+				return oldData.map((p) => {
+					if (p._id === post._id) {
+						return updatedPost;
+					}
+					return p;
+				});
+			});
 		},
 		onError: (error) => {
-			toast.error(error.message);
+			toast.error(error.message || "Failed to post comment");
 		},
 	});
 
 	const handleDeletePost = () => {
-		deletePost();
+		// Add confirmation for delete action
+		if (window.confirm("Are you sure you want to delete this post?")) {
+			deletePost();
+		}
 	};
 
 	const handlePostComment = (e) => {
 		e.preventDefault();
-		if (isCommenting) return;
+		if (isCommenting || !comment.trim()) return;
 		commentPost();
 	};
 
 	const handleLikePost = () => {
 		if (isLiking) return;
+		
+		// Create a local optimistic update to immediately reflect change in UI
+		const optimisticPost = { ...post };
+		
+		if (isLiked) {
+			// Optimistically remove user from likes
+			optimisticPost.likes = optimisticPost.likes.filter(
+				id => (typeof id === 'object' ? id._id?.toString() : id?.toString()) !== authUser._id?.toString()
+			);
+			console.log("Optimistically unliking post", post._id, "new count:", optimisticPost.likes.length);
+		} else {
+			// Optimistically add user to likes
+			optimisticPost.likes = [...(optimisticPost.likes || []), authUser._id];
+			console.log("Optimistically liking post", post._id, "new count:", optimisticPost.likes.length);
+		}
+		
+		// Immediately update UI with optimistic change
+		queryClient.setQueryData(["posts"], (oldData) => {
+			if (!oldData) return oldData;
+			return oldData.map((p) => {
+				if (p._id === post._id) {
+					return optimisticPost;
+				}
+				return p;
+			});
+		});
+		
+		// Then perform the actual API call
 		likePost();
 	};
 
@@ -165,13 +332,25 @@ const Post = ({ post }) => {
 						<div className='flex gap-4 items-center w-2/3 justify-between'>
 							<div
 								className='flex gap-1 items-center cursor-pointer group'
-								onClick={() => document.getElementById("comments_modal" + post._id).showModal()}
+								onClick={() => {
+									try {
+										const modal = document.getElementById(`comments_modal${post._id}`);
+										if (modal) {
+											modal.showModal();
+										} else {
+											console.error(`Modal with ID comments_modal${post._id} not found`);
+										}
+									} catch (error) {
+										console.error("Error showing comments modal:", error);
+									}
+								}}
 							>
 								<FaRegComment className='w-4 h-4  text-slate-500 group-hover:text-sky-400' />
 								<span className='text-sm text-slate-500 group-hover:text-sky-400'>
 									{post.comments.length}
 								</span>
 							</div>
+
 							{/* We're using Modal Component from DaisyUI */}
 							<dialog id={`comments_modal${post._id}`} className='modal border-none outline-none'>
 								<div className='modal-box rounded border border-gray-600'>
@@ -208,7 +387,7 @@ const Post = ({ post }) => {
 										onSubmit={handlePostComment}
 									>
 										<textarea
-											className='textarea w-full p-1 rounded text-md resize-none border focus:outline-none  border-gray-800'
+											className='textarea w-full p-1 rounded text-md resize-none border focus:outline-none border-gray-800 text-white bg-transparent'
 											placeholder='Add a comment...'
 											value={comment}
 											onChange={(e) => setComment(e.target.value)}
@@ -232,15 +411,15 @@ const Post = ({ post }) => {
 									<FaRegHeart className='w-4 h-4 cursor-pointer text-slate-500 group-hover:text-pink-500' />
 								)}
 								{isLiked && !isLiking && (
-									<FaRegHeart className='w-4 h-4 cursor-pointer text-pink-500 ' />
+									<FaHeart className='w-4 h-4 cursor-pointer text-pink-500' />
 								)}
 
 								<span
-									className={`text-sm  group-hover:text-pink-500 ${
+									className={`text-sm group-hover:text-pink-500 ${
 										isLiked ? "text-pink-500" : "text-slate-500"
 									}`}
 								>
-									{post.likes.length}
+									{post.likes ? post.likes.length : 0}
 								</span>
 							</div>
 						</div>

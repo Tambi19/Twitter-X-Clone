@@ -20,7 +20,13 @@ const CreatePost = () => {
 		error,
 	} = useMutation({
 		mutationFn: async ({ text, img }) => {
+			if (!text.trim() && !img) {
+				throw new Error("Post cannot be empty");
+			}
+			
 			try {
+				console.log("Creating post with:", { text, hasImage: !!img });
+				
 				const res = await fetch("/api/posts/create", {
 					method: "POST",
 					headers: {
@@ -28,26 +34,53 @@ const CreatePost = () => {
 					},
 					body: JSON.stringify({ text, img }),
 				});
-				const data = await res.json();
+				
 				if (!res.ok) {
-					throw new Error(data.error || "Something went wrong");
+					const contentType = res.headers.get("content-type");
+					if (contentType && contentType.includes("application/json")) {
+						const data = await res.json();
+						throw new Error(data.error || `Server error (${res.status}): ${data.message || "Unknown error"}`);
+					} else {
+						const text = await res.text();
+						console.error("Server returned non-JSON response:", text);
+						throw new Error(`Server error (${res.status}): The API returned an invalid response.`);
+					}
 				}
+				
+				const data = await res.json();
+				console.log("Post created successfully:", data);
 				return data;
 			} catch (error) {
-				throw new Error(error);
+				console.error("Post creation error:", error);
+				if (error.message.includes("Unexpected token")) {
+					throw new Error("Server error: The API is not responding correctly. Make sure the backend server is running.");
+				}
+				if (error.message.includes("413") || error.message.includes("request entity too large")) {
+					throw new Error("Image is too large. Please use a smaller image (max 5MB).");
+				}
+				throw new Error(error.message || "Failed to create post");
 			}
 		},
 
 		onSuccess: () => {
 			setText("");
 			setImg(null);
+			if (imgRef.current) imgRef.current.value = null;
 			toast.success("Post created successfully");
 			queryClient.invalidateQueries({ queryKey: ["posts"] });
 		},
+		onError: (error) => {
+			toast.error(error.message || "Failed to create post");
+		}
 	});
 
 	const handleSubmit = (e) => {
 		e.preventDefault();
+		if (isPending) return;
+		if (!text.trim() && !img) {
+			toast.error("Post cannot be empty");
+			return;
+		}
 		createPost({ text, img });
 	};
 
@@ -71,7 +104,7 @@ const CreatePost = () => {
 			</div>
 			<form className='flex flex-col gap-2 w-full' onSubmit={handleSubmit}>
 				<textarea
-					className='textarea w-full p-0 text-lg resize-none border-none focus:outline-none  border-gray-800'
+					className='textarea w-full p-0 text-lg resize-none border-none focus:outline-none border-gray-800 text-white bg-transparent'
 					placeholder='What is happening?!'
 					value={text}
 					onChange={(e) => setText(e.target.value)}
